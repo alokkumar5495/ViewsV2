@@ -964,7 +964,12 @@ function showPane(name,btn){
    INIT
 ═══════════════════════════════════════════ */
 document.addEventListener('click',closeRowMenus);
-renderRowMenus();renderAggChips();renderRawTable();applyFilters();switchView('table');
+renderRowMenus();
+renderAggChips();
+renderDrawer();
+selectDefault();
+applyFilters();
+switchView('table');
 </script>
 </body>
 </html>
