@@ -4,6 +4,12 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>ClaimsIQ — Self Reporting</title>
+<link
+  rel="stylesheet"
+  href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+  integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+  crossorigin=""
+/>
 <style>
 :root{
   --bg:#fff;--bg2:#f5f5f4;--bg3:#eef2f7;
@@ -47,6 +53,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-siz
 .btn.pri{background:var(--blue);color:#fff;border-color:var(--blue)}.btn.pri:hover{background:var(--blue-dk)}
 .btn.sm{padding:3px 8px;font-size:11px;border-radius:5px}
 .btn.tog{background:var(--bg3);border-color:var(--blue);color:var(--blue)}
+.btn.on{background:var(--blue);color:#fff;border-color:var(--blue)}
 .pill{background:var(--blue);color:#fff;border-radius:10px;font-size:10px;font-weight:500;padding:1px 6px;min-width:18px;display:inline-flex;align-items:center;justify-content:center}
 
 /* ── agg bar ── */
@@ -75,6 +82,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-siz
 /* ── main layout ── */
 .layout{display:flex}
 .tbl-wrap{flex:1;min-width:0;overflow-x:auto;max-height:calc(100vh - 210px);overflow-y:auto}
+.map-wrap{display:none;flex:1;min-width:0;height:calc(100vh - 210px);border-right:0.5px solid var(--bd);background:var(--bg2)}
+.map-wrap.active{display:block}
+#claims-map{width:100%;height:100%}
+.map-empty{display:flex;align-items:center;justify-content:center;height:100%;padding:24px;text-align:center;color:var(--tx2);font-size:13px}
 
 /* ── raw table ── */
 table.raw-tbl{border-collapse:collapse;font-size:12px;width:max-content;min-width:100%}
@@ -83,6 +94,13 @@ table.raw-tbl{border-collapse:collapse;font-size:12px;width:max-content;min-widt
 .raw-tbl td{padding:7px 12px;border-bottom:0.5px solid var(--bd);white-space:nowrap}
 .raw-tbl td.sc{position:sticky;left:0;z-index:1;background:var(--bg)}
 .raw-tbl tr:hover td{background:var(--bg2)}.raw-tbl tr:hover td.sc{background:var(--bg2)}
+.raw-tbl tr.sel td{background:#EEF5FC}.raw-tbl tr.sel td.sc{background:#E3EDFA}
+.raw-tbl th.chk,.raw-tbl td.chk{width:42px;min-width:42px;padding:7px 10px;text-align:center}
+.raw-tbl th.chk{position:sticky;left:0;z-index:4}
+.raw-tbl td.chk{position:sticky;left:0;z-index:2;background:var(--bg)}
+.raw-tbl td.chk input,.raw-tbl th.chk input{accent-color:var(--blue);cursor:pointer}
+.raw-tbl th.sel-sc{left:42px}
+.raw-tbl td.sel-sc{left:42px}
 
 /* ── agg result table ── */
 table.agg-tbl{border-collapse:collapse;font-size:12px;width:max-content;min-width:100%}
@@ -96,6 +114,15 @@ table.agg-tbl{border-collapse:collapse;font-size:12px;width:max-content;min-widt
 .agg-tbl tr.tot td.met-c{color:var(--blue-dk)}
 .agg-tbl tr:not(.tot):hover td{background:#EEF5FC}.agg-tbl tr:not(.tot):hover td.dim-c{background:#E3EDFA}
 .agg-mode-badge{display:inline-flex;align-items:center;gap:5px;padding:2px 9px;background:var(--blue-lt);color:var(--blue-dk);border-radius:20px;font-size:11px;font-weight:500}
+
+/* ── row action bar ── */
+.row-actions{display:none;align-items:center;justify-content:space-between;gap:12px;padding:8px 16px;border-bottom:0.5px solid var(--bd);background:#EEF5FC}
+.row-actions.visible{display:flex}
+.row-actions .meta{font-size:12px;color:var(--blue-dk);font-weight:500}
+.row-action-tools{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.row-action-form{display:none;align-items:center;gap:6px;flex-wrap:wrap}
+.row-action-form.visible{display:flex}
+.row-action-form select,.row-action-form input{padding:5px 8px;border:0.5px solid var(--bd2);border-radius:7px;background:var(--bg);color:var(--tx);font-size:12px;outline:none}
 
 /* ── column drawer ── */
 .drawer{width:0;flex-shrink:0;border-left:0.5px solid var(--bd);display:flex;flex-direction:column;overflow:hidden;transition:width .18s;max-height:calc(100vh - 120px)}
@@ -177,6 +204,8 @@ table.agg-tbl{border-collapse:collapse;font-size:12px;width:max-content;min-widt
       <span id="agg-mode-badge" style="display:none" class="agg-mode-badge">&#9654; Aggregated view</span>
     </div>
     <div class="tl">
+      <button class="btn on" id="view-table-btn" onclick="switchView('table')">Table</button>
+      <button class="btn" id="view-map-btn" onclick="switchView('map')">Map</button>
       <button class="btn" id="agg-toggle-btn" onclick="toggleAggBar()" title="Toggle aggregation panel">
         <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
           <rect x="1" y="1.5" width="5" height="10" rx="1" stroke="currentColor" stroke-width="1.1"/>
@@ -189,6 +218,22 @@ table.agg-tbl{border-collapse:collapse;font-size:12px;width:max-content;min-widt
       <button class="btn" onclick="openSaveModal()">&#128190; Save query</button>
       <button class="btn" onclick="doExport()">&#8615; Export CSV</button>
       <button class="btn pri" onclick="toggleDrawer()">&#9776; Columns <span class="pill" id="cpill">0</span></button>
+    </div>
+  </div>
+
+  <div class="row-actions" id="row-actions">
+    <div class="meta" id="row-actions-meta">0 rows selected</div>
+    <div class="row-action-tools">
+      <button class="btn sm" onclick="openRowAction('add')">Add value</button>
+      <button class="btn sm" onclick="openRowAction('change')">Change value</button>
+      <div class="row-action-form" id="row-action-form">
+        <span id="row-action-label" style="font-size:12px;color:var(--tx2)"></span>
+        <select id="row-action-col"></select>
+        <input type="text" id="row-action-val" placeholder="Enter value"/>
+        <button class="btn sm pri" onclick="applyRowAction()">Apply</button>
+        <button class="btn sm" onclick="closeRowActionForm()">Cancel</button>
+      </div>
+      <button class="btn sm" onclick="clearSelectedRows()">Clear selection</button>
     </div>
   </div>
 
@@ -225,6 +270,10 @@ table.agg-tbl{border-collapse:collapse;font-size:12px;width:max-content;min-widt
         <thead id="thead"></thead>
         <tbody id="tbody"></tbody>
       </table>
+    </div>
+    <div class="map-wrap" id="map-wrap">
+      <div id="claims-map"></div>
+      <div class="map-empty" id="map-empty" style="display:none"></div>
     </div>
     <div class="drawer" id="cdrawer">
       <div class="dr-hd"><h3>Select columns</h3><button class="btn sm" onclick="toggleDrawer()">Done</button></div>
@@ -263,6 +312,11 @@ table.agg-tbl{border-collapse:collapse;font-size:12px;width:max-content;min-widt
 </div>
 
 </div><!-- /app -->
+<script
+  src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+  integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+  crossorigin=""
+></script>
 <script>
 /* ═══════════════════════════════════════════
    COLUMN DEFINITIONS
@@ -305,6 +359,18 @@ const PROP=['Residential','Commercial','Industrial','Mixed-use'];
 const ADJ=['Priya Sharma','Ankit Mehta','Ravi Kumar','Sunita Patel','Deepak Joshi','Neha Singh'];
 const NAMES=['Rajesh Gupta','Meena Verma','Suresh Agarwal','Kavita Rao','Amit Sinha','Pooja Tiwari','Harish Bhat','Nalini Iyer','Rajan Nair','Pradeep Yadav','Sundar Krishnan','Ananya Das'];
 const CITIES=['Mumbai','Delhi','Bangalore','Chennai','Hyderabad','Pune','Ahmedabad','Kolkata','Jaipur','Surat'];
+const CITY_COORDS={
+  Mumbai:[19.076,72.8777],
+  Delhi:[28.6139,77.209],
+  Bangalore:[12.9716,77.5946],
+  Chennai:[13.0827,80.2707],
+  Hyderabad:[17.385,78.4867],
+  Pune:[18.5204,73.8567],
+  Ahmedabad:[23.0225,72.5714],
+  Kolkata:[22.5726,88.3639],
+  Jaipur:[26.9124,75.7873],
+  Surat:[21.1702,72.8311]
+};
 function rnd(a,b){return Math.floor(Math.random()*(b-a+1))+a}
 function pick(a){return a[rnd(0,a.length-1)]}
 function fd(d){return d.toISOString().slice(0,10)}
@@ -373,6 +439,8 @@ let actFilters=[],filtData=[...DATA];
 let sortK='',sortD=1;
 let savedQ=[],drawerOpen=false,catOpen={};
 CATS.forEach(c=>catOpen[c.id]=false); catOpen['claim']=true;
+let selectedRowIds=new Set(),activeView='table',rowActionMode='change';
+let map=null,mapMarkersLayer=null;
 
 /* aggregation state */
 let aggOpen=false,aggDims=[],aggVals=[],aggActive=false;
@@ -423,7 +491,7 @@ function applyFilters(){
     if(f.op==='less than')return parseFloat(rv)<parseFloat(fv);
     return true;
   }));
-  if(aggActive)runAgg();else renderRawTable();
+  renderCurrentView();
   updateRC();
 }
 function startAddFilter(){
@@ -444,7 +512,7 @@ function renderChips(){
 function resetAll(){
   actFilters=[];renderChips();document.getElementById('fform').innerHTML='';
   selCols=new Set(DEFAULT_COLS);filtData=[...DATA];sortK='';sortD=1;
-  clearAgg();renderDrawer();renderRawTable();updateRC();
+  clearAgg();renderDrawer();renderCurrentView();updateRC();
 }
 function updateRC(){
   if(aggActive){
@@ -461,13 +529,18 @@ function renderRawTable(){
   const tbl=document.getElementById('main-table');
   tbl.className='raw-tbl';
   const cols=[...selCols].map(k=>ALL_COLS.find(c=>c.key===k)).filter(Boolean);
-  document.getElementById('thead').innerHTML='<tr>'+cols.map((c,i)=>'<th class="'+(i===0?'sc':'')+'" onclick="sortBy(\''+c.key+'\')">'+c.label+'<span class="si '+(sortK===c.key?'on':'')+'">'+( sortK===c.key?(sortD===1?'&#9650;':'&#9660;'):'&#8645;')+'</span></th>').join('')+'</tr>';
+  const allVisibleSelected=!!filtData.length&&filtData.every(r=>selectedRowIds.has(r.claim_id));
+  document.getElementById('thead').innerHTML='<tr><th class="chk"><input type="checkbox" '+(allVisibleSelected?'checked':'')+' onchange="toggleSelectAllRows(this.checked)"></th>'+cols.map((c,i)=>'<th class="'+(i===0?'sc sel-sc':'')+'" onclick="sortBy(\''+c.key+'\')">'+c.label+'<span class="si '+(sortK===c.key?'on':'')+'">'+( sortK===c.key?(sortD===1?'&#9650;':'&#9660;'):'&#8645;')+'</span></th>').join('')+'</tr>';
   const rows=[...filtData];
   if(sortK)rows.sort((a,b)=>{const av=a[sortK]??'',bv=b[sortK]??'';return typeof av==='number'&&typeof bv==='number'?(av-bv)*sortD:String(av).localeCompare(String(bv))*sortD});
-  if(!rows.length){document.getElementById('tbody').innerHTML='<tr><td colspan="'+cols.length+'" style="text-align:center;padding:40px;color:var(--tx2)">No records match your filters.</td></tr>';return;}
-  document.getElementById('tbody').innerHTML=rows.map(r=>'<tr>'+cols.map((c,i)=>'<td class="'+(i===0?'sc':'')+'">'+fmtCell(r,c.key)+'</td>').join('')+'</tr>').join('');
+  if(!rows.length){document.getElementById('tbody').innerHTML='<tr><td colspan="'+(cols.length+1)+'" style="text-align:center;padding:40px;color:var(--tx2)">No records match your filters.</td></tr>';syncSelectionState();return;}
+  document.getElementById('tbody').innerHTML=rows.map(r=>{
+    const isSel=selectedRowIds.has(r.claim_id);
+    return'<tr class="'+(isSel?'sel':'')+'"><td class="chk"><input type="checkbox" '+(isSel?'checked':'')+' onchange="toggleRowSelection(\''+r.claim_id+'\',this.checked)"></td>'+cols.map((c,i)=>'<td class="'+(i===0?'sc sel-sc':'')+'">'+fmtCell(r,c.key)+'</td>').join('')+'</tr>';
+  }).join('');
   document.getElementById('cpill').textContent=selCols.size;
   const di=document.getElementById('drinf');if(di)di.textContent=selCols.size+' of '+ALL_COLS.length+' selected';
+  syncSelectionState();
 }
 function sortBy(k){sortK===k?sortD*=-1:(sortK=k,sortD=1);renderRawTable();}
 
@@ -569,10 +642,11 @@ function aggSortBy(k){aggSortK===k?aggSortD*=-1:(aggSortK=k,aggSortD=1);computeA
 /* Drill-down: click a group row to filter raw data to that group */
 function drillRow(tr){
   const cells=[...tr.querySelectorAll('td.dim-c')].map(td=>td.textContent.trim());
+  const dims=[...aggDims];
   clearAgg();
   cells.forEach((val,i)=>{
-    if(i>=aggDims.length)return;
-    const d=aggDims[i];
+    if(i>=dims.length)return;
+    const d=dims[i];
     actFilters.push({col:d.key,op:'equals',val,colLabel:d.label});
   });
   renderChips();applyFilters();
@@ -583,7 +657,142 @@ function clearAgg(){
   document.getElementById('agg-dim-form').innerHTML='';
   document.getElementById('agg-val-form').innerHTML='';
   document.getElementById('agg-mode-badge').style.display='none';
-  renderAggChips();renderRawTable();updateRC();
+  renderAggChips();renderCurrentView();updateRC();
+}
+
+function toggleRowSelection(id,checked){
+  if(checked)selectedRowIds.add(id);else selectedRowIds.delete(id);
+  if(activeView==='table'&&!aggActive)renderRawTable();else syncSelectionState();
+}
+function toggleSelectAllRows(checked){
+  filtData.forEach(r=>checked?selectedRowIds.add(r.claim_id):selectedRowIds.delete(r.claim_id));
+  renderCurrentView();
+}
+function clearSelectedRows(){
+  selectedRowIds.clear();
+  closeRowActionForm();
+  renderCurrentView();
+}
+function syncSelectionState(){
+  const count=selectedRowIds.size;
+  const bar=document.getElementById('row-actions');
+  const meta=document.getElementById('row-actions-meta');
+  bar.classList.toggle('visible',count>0&&activeView==='table'&&!aggActive);
+  meta.textContent=count+' row'+(count===1?'':'s')+' selected';
+}
+function openRowAction(mode){
+  rowActionMode=mode;
+  const opts=ALL_COLS.map(c=>'<option value="'+c.key+'">'+c.label+'</option>').join('');
+  document.getElementById('row-action-col').innerHTML=opts;
+  document.getElementById('row-action-label').textContent=mode==='add'?'Add onto selected rows:' :'Replace selected rows with:';
+  document.getElementById('row-action-val').value='';
+  document.getElementById('row-action-form').classList.add('visible');
+}
+function closeRowActionForm(){
+  document.getElementById('row-action-form').classList.remove('visible');
+}
+function applyRowAction(){
+  const key=document.getElementById('row-action-col').value;
+  const rawVal=document.getElementById('row-action-val').value.trim();
+  if(!key||!selectedRowIds.size)return;
+  DATA=DATA.map(row=>{
+    if(!selectedRowIds.has(row.claim_id))return row;
+    const next={...row};
+    if(rowActionMode==='change'){
+      next[key]=coerceValue(key,rawVal);
+      return next;
+    }
+    const current=next[key];
+    if(typeof current==='number'&&!isNaN(Number(rawVal))){
+      next[key]=current+Number(rawVal);
+    }else if(current==null||current===''||current==='—'){
+      next[key]=coerceValue(key,rawVal);
+    }else{
+      next[key]=String(current)+' | '+rawVal;
+    }
+    return next;
+  });
+  closeRowActionForm();
+  applyFilters();
+  renderCurrentView();
+}
+function coerceValue(key,val){
+  if(val==='')return '';
+  if(MONETARY.has(key)||key.includes('days')||key.includes('count')||key.includes('_%')||key.includes('score')||key.includes('age'))return Number(val);
+  return val;
+}
+
+function switchView(view){
+  activeView=view;
+  document.getElementById('view-table-btn').classList.toggle('on',view==='table');
+  document.getElementById('view-map-btn').classList.toggle('on',view==='map');
+  document.getElementById('tbl-wrap').style.display=view==='table'?'block':'none';
+  document.getElementById('map-wrap').classList.toggle('active',view==='map');
+  syncSelectionState();
+  if(view==='map')renderMap();
+}
+function initMap(){
+  if(map||typeof L==='undefined')return;
+  map=L.map('claims-map',{zoomControl:true}).setView([22.5,79],5);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+    maxZoom:18,
+    attribution:'&copy; OpenStreetMap contributors'
+  }).addTo(map);
+  mapMarkersLayer=L.layerGroup().addTo(map);
+}
+function renderMap(){
+  const wrap=document.getElementById('map-wrap');
+  const empty=document.getElementById('map-empty');
+  const mapEl=document.getElementById('claims-map');
+  if(activeView!=='map')return;
+  if(typeof L==='undefined'){
+    mapEl.style.display='none';
+    empty.style.display='flex';
+    empty.textContent='Map could not be loaded in this session.';
+    return;
+  }
+  initMap();
+  mapMarkersLayer.clearLayers();
+  const grouped={};
+  filtData.forEach(row=>{
+    const coords=CITY_COORDS[row.incident_city];
+    if(!coords)return;
+    const key=row.incident_city;
+    if(!grouped[key])grouped[key]={coords,city:key,rows:[]};
+    grouped[key].rows.push(row);
+  });
+  const groups=Object.values(grouped);
+  if(!groups.length){
+    mapEl.style.display='none';
+    empty.style.display='flex';
+    empty.textContent='No mappable rows are available for the current filters.';
+    return;
+  }
+  mapEl.style.display='block';
+  empty.style.display='none';
+  const bounds=[];
+  groups.forEach(group=>{
+    const [lat,lng]=group.coords;
+    const marker=L.circleMarker([lat,lng],{
+      radius:Math.min(18,6+group.rows.length),
+      color:'#185FA5',
+      fillColor:'#378ADD',
+      fillOpacity:.75,
+      weight:1.5
+    }).bindPopup('<strong>'+group.city+'</strong><br>'+group.rows.length+' claims<br>Open: '+group.rows.filter(r=>r.status==='Open').length+'<br>Closed: '+group.rows.filter(r=>r.status==='Closed').length);
+    marker.addTo(mapMarkersLayer);
+    bounds.push([lat,lng]);
+  });
+  map.invalidateSize();
+  if(bounds.length===1)map.setView(bounds[0],7);else map.fitBounds(bounds,{padding:[30,30]});
+}
+function renderCurrentView(){
+  if(aggActive){
+    computeAndRenderAgg(aggSortK,aggSortD);
+  }else{
+    renderRawTable();
+  }
+  if(activeView==='map')renderMap();
 }
 
 /* ═══════════════════════════════════════════
@@ -622,11 +831,11 @@ function toggleCat(id){catOpen[id]=!catOpen[id];renderDrawer();}
 function toggleCatAll(catId,q){
   const cat=CATS.find(c=>c.id===catId),fl=q?cat.cols.filter(c=>c.toLowerCase().includes(q)):cat.cols;
   const keys=fl.map(c=>toKey(c)),allS=keys.every(k=>selCols.has(k));
-  keys.forEach(k=>allS?selCols.delete(k):selCols.add(k));renderDrawer();if(!aggActive)renderRawTable();
+  keys.forEach(k=>allS?selCols.delete(k):selCols.add(k));renderDrawer();if(!aggActive)renderCurrentView();
 }
-function toggleCol(k){selCols.has(k)?selCols.delete(k):selCols.add(k);renderDrawer();if(!aggActive)renderRawTable();}
-function clearAllCols(){selCols.clear();renderDrawer();if(!aggActive)renderRawTable();}
-function selectDefault(){selCols=new Set(DEFAULT_COLS);renderDrawer();if(!aggActive)renderRawTable();}
+function toggleCol(k){selCols.has(k)?selCols.delete(k):selCols.add(k);renderDrawer();if(!aggActive)renderCurrentView();}
+function clearAllCols(){selCols.clear();renderDrawer();if(!aggActive)renderCurrentView();}
+function selectDefault(){selCols=new Set(DEFAULT_COLS);renderDrawer();if(!aggActive)renderCurrentView();}
 
 /* ═══════════════════════════════════════════
    SAVE / LOAD
@@ -659,7 +868,7 @@ function showPane(name,btn){
 /* ═══════════════════════════════════════════
    INIT
 ═══════════════════════════════════════════ */
-renderAggChips();renderRawTable();applyFilters();
+renderAggChips();renderRawTable();applyFilters();switchView('table');
 </script>
 </body>
 </html>
