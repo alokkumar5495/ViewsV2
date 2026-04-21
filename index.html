@@ -10,6 +10,10 @@
   integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
   crossorigin=""
 />
+<script
+  src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"
+  crossorigin="anonymous"
+></script>
 <style>
 :root{
   --bg:#fff;--bg2:#f5f5f4;--bg3:#eef2f7;
@@ -83,6 +87,20 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-siz
 .agg-run:hover{background:var(--blue-dk)}
 .agg-clear{padding:3px 8px;border:0.5px solid var(--bd2);border-radius:6px;font-size:11px;cursor:pointer;background:transparent;color:var(--tx2);white-space:nowrap;flex-shrink:0}
 .agg-clear:hover{background:var(--bg2)}
+
+/* ── graph builder ── */
+.graph-bar{display:none;align-items:center;gap:8px;padding:8px 16px;border-bottom:0.5px solid var(--bd);background:linear-gradient(180deg,var(--bg) 0%,var(--bg2) 100%);flex-wrap:wrap}
+.graph-bar.visible{display:flex}
+.graph-lbl{font-size:10px;font-weight:500;text-transform:uppercase;letter-spacing:.05em;color:var(--blue-dk)}
+.graph-inline{display:inline-flex;align-items:center;gap:4px;background:var(--bg);border:0.5px solid var(--bd2);border-radius:8px;padding:4px 8px}
+.graph-inline select{border:none;background:transparent;font-size:12px;color:var(--tx);outline:none;cursor:pointer;padding:2px 4px;max-width:170px}
+.graph-card{display:none;margin:14px 16px 0;border:0.5px solid var(--bd);border-radius:12px;background:var(--bg);overflow:hidden}
+.graph-card.visible{display:block}
+.graph-card-hd{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 16px;border-bottom:0.5px solid var(--bd);background:var(--bg2)}
+.graph-card-hd h3{font-size:13px;font-weight:500}
+.graph-card-sub{font-size:11px;color:var(--tx2);margin-top:2px}
+.graph-card-bd{padding:14px 16px;height:340px}
+.graph-empty{display:flex;align-items:center;justify-content:center;height:100%;text-align:center;color:var(--tx2);font-size:13px}
 
 /* ── main layout ── */
 .layout{display:flex}
@@ -196,6 +214,9 @@ table.agg-tbl{border-collapse:collapse;font-size:12px;width:max-content;min-widt
   .toolbar .tl:last-child{justify-content:flex-start}
   .btn{padding:5px 10px}
   .row-actions{padding:8px 12px}
+  .graph-bar{padding:8px 12px}
+  .graph-card{margin:12px 12px 0}
+  .graph-card-bd{height:280px}
 }
 </style>
 </head>
@@ -245,6 +266,7 @@ table.agg-tbl{border-collapse:collapse;font-size:12px;width:max-content;min-widt
         </svg>
         Aggregate
       </button>
+      <button class="btn" id="graph-toggle-btn" onclick="toggleGraphBar()">Graph</button>
       <button class="btn" onclick="openSaveModal()">&#128190; Save query</button>
       <button class="btn" onclick="doExport()">&#8615; Export CSV</button>
       <button class="btn pri" onclick="toggleDrawer()">&#9776; Columns <span class="pill" id="cpill">0</span></button>
@@ -300,6 +322,29 @@ table.agg-tbl{border-collapse:collapse;font-size:12px;width:max-content;min-widt
     <div class="agg-section" style="border-right:none;gap:6px;flex-shrink:0">
       <button class="agg-run" onclick="runAgg()">&#9654; Apply</button>
       <button class="agg-clear" onclick="clearAgg()">&#10005; Clear</button>
+    </div>
+  </div>
+
+  <div class="graph-bar" id="graph-bar">
+    <span class="graph-lbl">Graph</span>
+    <div class="graph-inline"><select id="graph-type"><option value="bar">Bar</option><option value="line">Line</option><option value="pie">Pie</option><option value="doughnut">Doughnut</option></select></div>
+    <div class="graph-inline"><select id="graph-dim"></select></div>
+    <div class="graph-inline"><select id="graph-val"></select></div>
+    <button class="agg-run" onclick="runGraph()">Create graph</button>
+    <button class="agg-clear" onclick="clearGraph()">Clear</button>
+  </div>
+
+  <div class="graph-card" id="graph-card">
+    <div class="graph-card-hd">
+      <div>
+        <h3 id="graph-title">Graph preview</h3>
+        <div class="graph-card-sub" id="graph-subtitle">Visualize the current result set.</div>
+      </div>
+      <button class="btn sm" onclick="clearGraph()">Hide</button>
+    </div>
+    <div class="graph-card-bd">
+      <canvas id="graph-canvas"></canvas>
+      <div class="graph-empty" id="graph-empty" style="display:none">Choose graph settings to preview your data.</div>
     </div>
   </div>
 
@@ -380,6 +425,7 @@ const ALL_COLS=[];CATS.forEach(cat=>cat.cols.forEach(c=>ALL_COLS.push({key:toKey
 const DIM_KEYS=new Set(['loss_type','status','region','claim_year','claim_month','quarter','financial_year','property_type','incident_city','incident_state','policy_type','priority_level','construction_type','claim_type','claim_source','filing_method','payment_mode','adjuster_name','surveyor_name','tpa_involved','kyc_status','fraud_flag','large_loss_flag','sla_breach_flag','vip_customer','litigation_flag','subrogation_flag','complaint_filed','agent_name']);
 const MONETARY=new Set(['claimed_amount','approved_amount','net_payable','reserve_amount','sum_insured','premium_amount','deductible_amount']);
 const AGG_FNS=['Count','Count distinct','Sum','Average','Min','Max'];
+const GRAPH_FNS=['Count','Sum','Average','Min','Max'];
 const AGG={
   'Count':v=>v.length,
   'Count distinct':v=>new Set(v.filter(x=>x!=null).map(String)).size,
@@ -481,6 +527,7 @@ let savedQ=[],drawerOpen=false,catOpen={};
 CATS.forEach(c=>catOpen[c.id]=false); catOpen['claim']=true;
 let selectedRowIds=new Set(),activeView='table',rowActionMode='change';
 let map=null,mapMarkersLayer=null;
+let graphOpen=false,graphChart=null,graphConfig={active:false,type:'bar',dim:'',val:'count'};
 const ROW_ACTION_MENUS={
   add:[
     {label:'Workkard Note',key:'claim_notes',enabled:true},
@@ -559,6 +606,7 @@ function applyFilters(){
     return true;
   }));
   renderCurrentView();
+  refreshGraphOptions();
   updateRC();
 }
 function startAddFilter(){
@@ -579,7 +627,7 @@ function renderChips(){
 function resetAll(){
   actFilters=[];renderChips();document.getElementById('fform').innerHTML='';
   selCols=new Set(DEFAULT_COLS);filtData=[...DATA];sortK='';sortD=1;
-  clearAgg();renderDrawer();renderCurrentView();updateRC();
+  clearAgg();clearGraph();renderDrawer();renderCurrentView();updateRC();
 }
 function updateRC(){
   if(aggActive){
@@ -618,6 +666,12 @@ function toggleAggBar(){
   aggOpen=!aggOpen;
   document.getElementById('agg-bar').classList.toggle('visible',aggOpen);
   document.getElementById('agg-toggle-btn').classList.toggle('tog',aggOpen);
+}
+function toggleGraphBar(){
+  graphOpen=!graphOpen;
+  document.getElementById('graph-bar').classList.toggle('visible',graphOpen);
+  document.getElementById('graph-toggle-btn').classList.toggle('tog',graphOpen);
+  if(graphOpen)refreshGraphOptions();
 }
 
 function showAggForm(type){
@@ -658,6 +712,7 @@ function runAgg(){
   aggActive=true;aggSortK='';aggSortD=1;
   document.getElementById('agg-mode-badge').style.display='';
   computeAndRenderAgg();updateRC();
+  refreshGraphOptions();
 }
 
 function computeAndRenderAgg(sk,sd){
@@ -725,6 +780,110 @@ function clearAgg(){
   document.getElementById('agg-val-form').innerHTML='';
   document.getElementById('agg-mode-badge').style.display='none';
   renderAggChips();renderCurrentView();updateRC();
+  refreshGraphOptions();
+}
+
+function refreshGraphOptions(){
+  const dimEl=document.getElementById('graph-dim'),valEl=document.getElementById('graph-val');
+  if(!dimEl||!valEl)return;
+  if(aggActive&&aggDims.length&&aggVals.length){
+    dimEl.innerHTML=aggDims.map(d=>'<option value="'+d.key+'">'+d.label+'</option>').join('');
+    valEl.innerHTML=aggVals.map(v=>'<option value="'+v.key+'|'+v.fn+'">'+v.fn+' · '+v.label+'</option>').join('');
+    if(!aggDims.some(d=>d.key===graphConfig.dim))graphConfig.dim=aggDims[0].key;
+    if(!aggVals.some(v=>(v.key+'|'+v.fn)===graphConfig.val))graphConfig.val=aggVals[0].key+'|'+aggVals[0].fn;
+    dimEl.value=graphConfig.dim;
+    valEl.value=graphConfig.val;
+    return;
+  }
+  const dimCandidates=ALL_COLS.filter(c=>DIM_KEYS.has(c.key)||selCols.has(c.key)).slice(0,80);
+  const metricCandidates=ALL_COLS.filter(c=>MONETARY.has(c.key)||c.key.includes('days')||c.key.includes('score')||c.key.includes('amount')).slice(0,60);
+  dimEl.innerHTML=dimCandidates.map(c=>'<option value="'+c.key+'">'+c.label+'</option>').join('');
+  valEl.innerHTML='<option value="count">Count of records</option>'+metricCandidates.flatMap(c=>GRAPH_FNS.map(fn=>'<option value="'+c.key+'|'+fn+'">'+fn+' · '+c.label+'</option>')).join('');
+  if(!dimCandidates.some(c=>c.key===graphConfig.dim))graphConfig.dim=(dimCandidates[0]?.key)||'status';
+  const rawVals=['count'].concat(metricCandidates.flatMap(c=>GRAPH_FNS.map(fn=>c.key+'|'+fn)));
+  if(!rawVals.includes(graphConfig.val))graphConfig.val='count';
+  dimEl.value=graphConfig.dim;
+  valEl.value=graphConfig.val;
+}
+function runGraph(){
+  graphConfig.type=document.getElementById('graph-type').value;
+  graphConfig.dim=document.getElementById('graph-dim').value;
+  graphConfig.val=document.getElementById('graph-val').value;
+  const spec=aggActive?buildAggGraphSpec():buildRawGraphSpec();
+  if(!spec.labels.length){alert('Not enough data to create a graph.');return;}
+  graphConfig.active=true;
+  renderGraph(spec);
+}
+function buildRawGraphSpec(){
+  const groups={};
+  filtData.forEach(row=>{
+    const key=String(row[graphConfig.dim]??'—');
+    if(!groups[key])groups[key]=[];
+    groups[key].push(row);
+  });
+  let entries=Object.entries(groups).map(([label,rows])=>{
+    if(graphConfig.val==='count')return {label,value:rows.length};
+    const [metricKey,fn]=graphConfig.val.split('|');
+    return {label,value:AGG[fn](rows.map(r=>r[metricKey]))};
+  }).sort((a,b)=>b.value-a.value).slice(0,12);
+  return {
+    labels:entries.map(e=>e.label),
+    values:entries.map(e=>e.value),
+    title:ALL_COLS.find(c=>c.key===graphConfig.dim)?.label||graphConfig.dim,
+    subtitle:graphConfig.val==='count'?'Count of records':graphConfig.val.split('|')[1]+' · '+(ALL_COLS.find(c=>c.key===graphConfig.val.split('|')[0])?.label||graphConfig.val)
+  };
+}
+function buildAggGraphSpec(){
+  if(!lastAggRows||!lastAggRows.length)return {labels:[],values:[],title:'',subtitle:''};
+  const idx=aggDims.findIndex(d=>d.key===graphConfig.dim);
+  const meta=aggVals.find(v=>(v.key+'|'+v.fn)===graphConfig.val);
+  const entries=lastAggRows.map(row=>({label:idx>=0?row._rv[idx]:'Group',value:Number(row[graphConfig.val]??0)})).slice(0,12);
+  return {
+    labels:entries.map(e=>e.label),
+    values:entries.map(e=>e.value),
+    title:aggDims.find(d=>d.key===graphConfig.dim)?.label||graphConfig.dim,
+    subtitle:meta?(meta.fn+' · '+meta.label):graphConfig.val
+  };
+}
+function renderGraph(spec){
+  const card=document.getElementById('graph-card'),canvas=document.getElementById('graph-canvas'),empty=document.getElementById('graph-empty');
+  document.getElementById('graph-title').textContent=spec.title;
+  document.getElementById('graph-subtitle').textContent=spec.subtitle+(aggActive?' · Aggregated view':' · Query result');
+  card.classList.add('visible');
+  empty.style.display='none';
+  canvas.style.display='block';
+  if(graphChart)graphChart.destroy();
+  const type=graphConfig.type;
+  graphChart=new Chart(canvas,{
+    type,
+    data:{
+      labels:spec.labels,
+      datasets:[{
+        label:spec.subtitle,
+        data:spec.values,
+        borderColor:'#378ADD',
+        backgroundColor:type==='line'?'rgba(55,138,221,.15)':['rgba(55,138,221,.88)','rgba(24,95,165,.84)','rgba(15,110,86,.78)','rgba(83,74,183,.78)','rgba(133,79,11,.78)','rgba(153,60,29,.78)','rgba(61,109,17,.74)','rgba(153,53,86,.72)','rgba(45,160,117,.72)','rgba(107,107,107,.68)','rgba(102,146,194,.72)','rgba(33,85,135,.72)'],
+        tension:.28,
+        fill:type==='line',
+        borderWidth:2,
+        pointRadius:type==='line'?3:0
+      }]
+    },
+    options:{
+      responsive:true,
+      maintainAspectRatio:false,
+      plugins:{legend:{display:type==='pie'||type==='doughnut'}},
+      scales:(type==='pie'||type==='doughnut')?{}:{
+        y:{beginAtZero:true,grid:{color:'rgba(0,0,0,.06)'},ticks:{color:'#6b6b6b'}},
+        x:{grid:{display:false},ticks:{color:'#6b6b6b'}}
+      }
+    }
+  });
+}
+function clearGraph(){
+  graphConfig.active=false;
+  document.getElementById('graph-card').classList.remove('visible');
+  if(graphChart){graphChart.destroy();graphChart=null;}
 }
 
 function toggleRowSelection(id,checked){
@@ -888,6 +1047,7 @@ function renderCurrentView(){
     renderRawTable();
   }
   if(activeView==='map')renderMap();
+  if(graphConfig.active)runGraph();
 }
 
 /* ═══════════════════════════════════════════
@@ -968,6 +1128,7 @@ renderRowMenus();
 renderAggChips();
 renderDrawer();
 selectDefault();
+refreshGraphOptions();
 applyFilters();
 switchView('table');
 </script>
